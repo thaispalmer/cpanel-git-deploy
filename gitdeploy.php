@@ -1,4 +1,28 @@
 <?php
+
+function gitClone($gitBinary, $gitUrl, $keyPath, $barePath) {
+    $gitParams = 'clone ' . $gitUrl . ' "' . $barePath . '"';
+    if ($keyPath) {
+        $command = 'ssh-add "' . $keyPath . '" && "' . $gitBinary . '" ' . $gitParams;
+        exec("ssh-agent bash -c '". $command . "'");
+    }
+    else {
+        $command = '"' . $gitBinary . '" ' . $gitParams;
+        exec($command);
+    }
+}
+
+function gitPull($gitBinary, $keyPath, $branch, $barePath, $path) {
+    $gitCommand = '"' . $gitBinary . '" -C "' . $barePath . '" pull && "' . $gitBinary . '" -C "' . $barePath . '" checkout-index -f --prefix="' . $path . '"';
+    if ($keyPath) {
+        $command = 'ssh-add "' . $keyPath . '" && ' . $gitCommand;
+        exec("ssh-agent bash -c '". $command . "'");
+    }
+    else {
+        exec($gitCommand);
+    }
+}
+
 $userSettings = [];
 $userSettings['homedir'] = './homedir';
 
@@ -31,10 +55,18 @@ if ($_POST):
     switch ($_POST['action']) {
         case 'insert':
             if ($_POST['git'] && $_POST['path'] && $_POST['branch']) {
+                $entryId = uniqid();
+                $barePath = $userSettings['homedir'] . '/.gitdeploy/' . $entryId;
+                if (!empty($_POST['key'])) {
+                    $keyFile = $userSettings['homedir'] . '/.gitdeploy/' . $entryId . '.key';
+                    file_put_contents($keyFile, $_POST['key']);
+                }
                 array_push($config['deploys'], Array(
+                    'id' => $entryId,
                     'git' => $_POST['git'],
-                    'key' => (empty($_POST['key']) ? null : $_POST['key']),
-                    'path' => $_POST['path'],
+                    'key' => (empty($_POST['key']) ? null : $keyFile),
+                    'path' => $userSettings['homedir'] . '/' . $_POST['path'],
+                    'barePath' => $barePath,
                     'branch' => $_POST['branch']
                 ));
                 file_put_contents($configFile, json_encode($config));
@@ -50,6 +82,29 @@ if ($_POST):
                 array_splice($config['deploys'], $_POST['index'] -1, 1);
                 file_put_contents($configFile, json_encode($config));
                 echo 'Config file saved.';
+                // todo: remove files
+            }
+            else {
+                echo 'Missing parameters.';
+            }
+            break;
+
+        case 'clone':
+            if (!empty($_POST['index'])) {
+                $deployInfo = $config['deploys'][$_POST['index'] -1];
+                gitClone($config['gitBinary'], $deployInfo['git'], $deployInfo['key'], $deployInfo['barePath']);
+                echo 'Repository Cloned';
+            }
+            else {
+                echo 'Missing parameters.';
+            }
+            break;
+
+        case 'pull':
+            if (!empty($_POST['index'])) {
+                $deployInfo = $config['deploys'][$_POST['index'] -1];
+                gitPull($config['gitBinary'], $deployInfo['key'], $deployInfo['branch'], $deployInfo['barePath'], $deployInfo['path']);
+                echo 'Deploy successful';
             }
             else {
                 echo 'Missing parameters.';
@@ -78,9 +133,13 @@ endif;
     <li>
         <form method="post">
             <?php echo $deployInfo['git']; ?> -> <?php echo $deployInfo['path']; ?>
-            <input type="submit" value="Remove"/>
+            <select name="action">
+                <option value="clone">Clone</option>
+                <option value="pull">Pull</option>
+                <option value="delete">Remove</option>
+            </select>
+            <input type="submit" value="Go"/>
             <input type="hidden" name="index" value="<?php echo $index +1 ?>"/>
-            <input type="hidden" name="action" value="delete"/>
         </form>
     </li>
 <?php endforeach; ?>
