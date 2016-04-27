@@ -1,3 +1,8 @@
+cPanel Git Deploy extension
+===========================
+
+**Still in development!**
+
 Path to cPanel's git binary
     /usr/local/cpanel/3rdparty/bin/git
 
